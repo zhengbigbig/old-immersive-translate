@@ -26,7 +26,7 @@ const specialRules = [
       "a.hn-item-title",
       ".hn-comment-text",
       ".hn-story-title"
-      
+
     ],
   },
   {
@@ -146,7 +146,7 @@ const specialRules = [
     "selectors": [
       "#content-text"
     ],
-    
+
     "detectLanguage":true
   },
   {
@@ -162,7 +162,7 @@ const specialRules = [
     "selectors": [
       ".post-preview-title",
       ".post-preview-description",
-      
+
     ],
     "containerSelectors": [
       ".post",
@@ -195,7 +195,7 @@ const specialRules = [
     "containerSelectors": [
       "#document-text-content"
     ],
-    
+
     "detectLanguage":true
   },
   {
@@ -206,7 +206,7 @@ const specialRules = [
     "containerSelectors": [
       ".article_content"
     ],
-    
+
     "detectLanguage":true
   },
   {
@@ -229,7 +229,7 @@ const specialRules = [
       "P",
       "LI"
     ],
-    
+
     "detectLanguage":true
   },
   {
@@ -274,7 +274,7 @@ const specialRules = [
     "containerSelectors":[
       ".markdown-body",".readme"
     ],
-  
+
     "detectLanguage":true
   },
   {

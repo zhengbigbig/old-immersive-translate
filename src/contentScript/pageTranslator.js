@@ -7,12 +7,17 @@
  *
  * Under certain circumstances，Google broken the translation, returned startMark0 in some cases
  * */
+// 这些标记不能包含单词，例如 <customskipword>12</customskipword>34
+// Google会重新排序为 <customskipword>1234</customskipword>
+// 在某些情况下，Google会破坏翻译，在某些情况下返回startMark0
 const startMark = '@%';
 const endMark = '#$';
 const startMark0 = '@ %';
 const endMark0 = '# $';
 
+// 当前索引
 let currentIndex;
+// 压缩映射
 let compressionMap;
 
 /**
@@ -26,35 +31,43 @@ let compressionMap;
  *
  *  But this will also cause this method to not work for Chinese, Burmese and other languages without spaces.
  * */
+// 在发送到翻译引擎之前，将匹配的关键词转换为特殊数字字符串以跳过翻译。
+// 对于英文单词，匹配时忽略大小写。
+// 但对于单词"app"，我们不希望"Happy"也被匹配。
+// 因此，我们通过检查关键词前后的两个字符来仅匹配孤立的单词。
+// 但这也会导致此方法对于没有空格的中文、缅甸语和其他语言不起作用。
 function filterKeywordsInText(textContext) {
     let customDictionary = twpConfig.get("customDictionary")
     if (customDictionary.size > 0) {
         // reordering , we want to match the keyword "Spring Boot" first then the keyword "Spring"
+        // 重新排序，我们希望先匹配关键词"Spring Boot"，然后再匹配关键词"Spring"
         customDictionary = new Map([...customDictionary.entries()].sort((a, b) => String(b[0]).length - String(a[0]).length))
-        for (let keyWord of customDictionary.keys()) {
+        for (const keyWord of customDictionary.keys()) {
             while (true) {
-                let index = textContext.toLowerCase().indexOf(keyWord)
+                const index = textContext.toLowerCase().indexOf(keyWord)
                 if (index === -1) {
                     break
                 } else {
                     textContext = removeExtraDelimiter(textContext)
-                    let previousIndex = index - 1
-                    let nextIndex = index + keyWord.length
-                    let previousChar = previousIndex === -1 ? '\n' : textContext.charAt(previousIndex)
-                    let nextChar = nextIndex === textContext.length ? '\n' : textContext.charAt(nextIndex)
+                    const previousIndex = index - 1
+                    const nextIndex = index + keyWord.length
+                    const previousChar = previousIndex === -1 ? '\n' : textContext.charAt(previousIndex)
+                    const nextChar = nextIndex === textContext.length ? '\n' : textContext.charAt(nextIndex)
                     let placeholderText = ''
-                    let keyWordWithCase = textContext.substring(index, index + keyWord.length)
+                    const keyWordWithCase = textContext.substring(index, index + keyWord.length)
                     if (isPunctuationOrDelimiter(previousChar) && isPunctuationOrDelimiter(nextChar)) {
+                        // 如果关键词前后都是标点符号或分隔符，则使用标记包装关键词
                         placeholderText = startMark + handleHitKeywords(keyWordWithCase, true) + endMark
                     } else {
+                        // 否则在每个字符之间添加特殊标记
                         placeholderText = '#n%o#'
-                        for (let c of Array.from(keyWordWithCase)) {
+                        for (const c of Array.from(keyWordWithCase)) {
                             placeholderText += c
                             placeholderText += '#n%o#'
                         }
                     }
-                    let frontPart = textContext.substring(0, index)
-                    let backPart = textContext.substring(index + keyWord.length)
+                    const frontPart = textContext.substring(0, index)
+                    const backPart = textContext.substring(index + keyWord.length)
                     textContext = frontPart + placeholderText + backPart
                 }
             }
@@ -69,6 +82,8 @@ function filterKeywordsInText(textContext) {
  *
  *  When encountering Google Translate reordering, the original text contains our mark, etc. , we will catch these exceptions and call the text translation method to retranslate this section.
  *  */
+// 处理翻译文本中的关键词，如果有自定义替换值则替换它。
+// 当遇到Google翻译重新排序，原始文本包含我们的标记等情况时，我们会捕获这些异常并调用文本翻译方法重新翻译这部分内容。
 async function handleCustomWords(translated, originalText, currentPageTranslatorService, currentTargetLanguage) {
     try {
         const customDictionary = twpConfig.get("customDictionary")
@@ -78,14 +93,15 @@ async function handleCustomWords(translated, originalText, currentPageTranslator
             translated = translated.replaceAll(endMark0, endMark)
 
             while (true) {
-                let startIndex = translated.indexOf(startMark)
-                let endIndex = translated.indexOf(endMark)
+                const startIndex = translated.indexOf(startMark)
+                const endIndex = translated.indexOf(endMark)
                 if (startIndex === -1 && endIndex === -1) {
                     break
                 } else {
-                    let placeholderText = translated.substring(startIndex + startMark.length, endIndex)
+                    const placeholderText = translated.substring(startIndex + startMark.length, endIndex)
                     // At this point placeholderText is actually currentIndex , the real value is in compressionMap
-                    let keyWord = handleHitKeywords(placeholderText, false)
+                    // 此时placeholderText实际上是currentIndex，真实值在compressionMap中
+                    const keyWord = handleHitKeywords(placeholderText, false)
                     if (keyWord === "undefined") {
                         throw new Error("undefined")
                     }
@@ -94,6 +110,7 @@ async function handleCustomWords(translated, originalText, currentPageTranslator
                     let customValue = customDictionary.get(keyWord.toLowerCase())
                     customValue = (customValue === '') ? keyWord : customValue
                     // Highlight custom words, make it have a space before and after it
+                    // 高亮自定义词，在其前后添加空格
                     frontPart = isPunctuationOrDelimiter(frontPart.charAt(frontPart.length - 1)) ? frontPart : (frontPart + ' ')
                     backPart = isPunctuationOrDelimiter(backPart.charAt(0)) ? backPart : (' ' + backPart)
                     translated = frontPart + customValue + backPart
@@ -113,6 +130,8 @@ async function handleCustomWords(translated, originalText, currentPageTranslator
  *
  * False : Extract keywords by index
  * */
+// True：将关键词存储在Map中并返回索引
+// False：通过索引提取关键词
 function handleHitKeywords(value, mode) {
     if (mode) {
         if (currentIndex === undefined) {
@@ -144,6 +163,8 @@ function handleHitKeywords(value, mode) {
  * added: special html space symbol: &nbsp; &ensp; &emsp; &thinsp; &zwnj; &zwj; -> \u00A0|\u2002|\u2003|\u2009|\u200C|\u200D
  * @see https://stackoverflow.com/a/21396529/19616126
  * */
+// 任何类型的标点符号（包括国际标点符号，例如中文和西班牙语标点符号）以及空格、换行符
+// 这个函数用于检测字符是否为标点符号或分隔符
 function isPunctuationOrDelimiter(str) {
     if (typeof str !== "string") return false
     if (str === '\n' || str === ' ') return true
@@ -154,6 +175,7 @@ function isPunctuationOrDelimiter(str) {
 /**
  * Remove useless newlines, spaces inside, which may affect our semantics
  * */
+// 移除可能影响语义的无用换行符和多余空格
 function removeExtraDelimiter(textContext) {
     textContext = textContext.replaceAll('\n', ' ')
     textContext = textContext.replace(/  +/g, ' ')
@@ -161,6 +183,7 @@ function removeExtraDelimiter(textContext) {
 }
 
 
+// 向后台发送请求翻译HTML内容
 function backgroundTranslateHTML(translationService, targetLanguage, sourceArray2d, dontSortResults) {
     return new Promise((resolve, reject) => {
         chrome.runtime.sendMessage({
@@ -175,6 +198,7 @@ function backgroundTranslateHTML(translationService, targetLanguage, sourceArray
     })
 }
 
+// 向后台发送请求翻译文本数组
 function backgroundTranslateText(translationService, targetLanguage, sourceArray) {
     return new Promise((resolve, reject) => {
         chrome.runtime.sendMessage({
@@ -188,6 +212,7 @@ function backgroundTranslateText(translationService, targetLanguage, sourceArray
     })
 }
 
+// 向后台发送请求翻译单个文本
 function backgroundTranslateSingleText(translationService, targetLanguage, source) {
     return new Promise((resolve, reject) => {
         chrome.runtime.sendMessage({
@@ -201,7 +226,7 @@ function backgroundTranslateSingleText(translationService, targetLanguage, sourc
     })
 }
 
-var pageTranslator = {}
+const pageTranslator = {}
 
 function getTabHostName() {
     return new Promise(resolve => chrome.runtime.sendMessage({action: "getTabHostName"}, result => resolve(result)))
@@ -210,25 +235,35 @@ function getTabHostName() {
 function getTabUrl() {
     return new Promise(resolve => chrome.runtime.sendMessage({action: "getTabUrl"}, result => resolve(result)))
 }
+
 Promise.all([twpConfig.onReady(), getTabUrl()])
 .then(function (_) {
+    // 1.1 获取页面基本信息
     const tabUrl = _[1];
     const tabUrlObj = new URL(tabUrl);
     const tabHostName = tabUrlObj.hostname;
     const tabUrlWithoutSearch = tabUrlObj.origin + tabUrlObj.pathname;
+
+    // 1.2 创建上下文对象，用于在整个翻译过程中传递信息
     const ctx = {
       tabUrl,
       tabHostName,
       tabUrlWithoutSearch,
       twpConfig
     }
+
+    // 1.3 定义HTML标签分类
+    // 内联文本标签列表
     const htmlTagsInlineText = ['#text', 'A', 'ABBR', 'ACRONYM', 'B', 'BDO', 'BIG', 'CITE', 'DFN', 'EM', 'I', 'LABEL', 'Q', 'S', 'SMALL', 'SPAN', 'STRONG', 'SUB', 'SUP', 'U', 'TT', 'VAR']
-    const htmlTagsInlineIgnore = ['BR', 'CODE', 'KBD', 'WBR'] // and input if type is submit or button, and pre depending on settings
-    const htmlTagsNoTranslate = ['TITLE', 'SCRIPT', 'STYLE', 'TEXTAREA', 'SVG', 'svg'] //TODO verificar porque 'svg' é com letras minúsculas
+    // 需要忽略的内联标签
+    const htmlTagsInlineIgnore = ['BR', 'CODE', 'KBD', 'WBR']
+    // 不需要翻译的标签
+    const htmlTagsNoTranslate = ['TITLE', 'SCRIPT', 'STYLE', 'TEXTAREA', 'SVG', 'svg']
+
+    // 1.4 处理特殊规则配置
     const specialRulesConfigs = twpConfig.get('specialRules');
     if(Array.isArray(specialRulesConfigs) && specialRulesConfigs.length > 0){
       for(const specialRuleString of specialRulesConfigs){
-        // add to specialRules
         try{
           const specialRule = JSON.parse(specialRuleString);
           specialRules.unshift(specialRule);
@@ -258,15 +293,15 @@ Promise.all([twpConfig.onReady(), getTabUrl()])
     //TODO FOO
     twpConfig.set("targetLanguage", twpConfig.get("targetLanguages")[0])
 
-    // Pieces are a set of nodes separated by inline tags that form a sentence or paragraph.
-    let piecesToTranslate = []
-    let originalTabLanguage = "und"
-    let currentPageLanguage = "und"
-    let pageLanguageState = "original"
-    let currentTargetLanguage = twpConfig.get("targetLanguage")
-    let currentPageTranslatorService = twpConfig.get("pageTranslatorService")
-    let dontSortResults = twpConfig.get("dontSortResults") == "yes" ? true : false
-    let fooCount = 0
+    // 2. 状态管理变量初始化
+    let piecesToTranslate = [] // 需要翻译的文本片段
+    let originalTabLanguage = "und" // 原始标签语言
+    let currentPageLanguage = "und" // 当前页面语言
+    let pageLanguageState = "original" // 页面语言状态
+    let currentTargetLanguage = twpConfig.get("targetLanguage") // 当前目标语言
+    let currentPageTranslatorService = twpConfig.get("pageTranslatorService") // 当前翻译服务
+    let dontSortResults = twpConfig.get("dontSortResults") == "yes" // 是否不排序结果
+    let fooCount = 0 // 翻译状态追踪计数器
 
     let originalPageTitle
 
@@ -278,13 +313,18 @@ Promise.all([twpConfig.onReady(), getTabUrl()])
 
     let nodesToRestore = []
 
+    // 4. 页面可见性管理
+    let pageIsVisible = document.visibilityState == "visible"
+
+    // 5. 核心功能函数定义
+    // 5.1 动态节点翻译
     async function translateNewNodes() {
         try {
             for(const nn of newNodes) {
                 if (removedNodes.indexOf(nn) != -1) continue;
 
                 // let newPiecesToTranslate = getPiecesToTranslate(nn)
-                let newPiecesToTranslate = (await getNodesThatNeedToTranslate(nn,ctx)).reduce((acc, node) => {
+                const newPiecesToTranslate = (await getNodesThatNeedToTranslate(nn,ctx)).reduce((acc, node) => {
                   return acc.concat(getPiecesToTranslate(node))
                 }, [])
 
@@ -311,6 +351,7 @@ Promise.all([twpConfig.onReady(), getTabUrl()])
         }
     }
 
+    // 5.2 DOM变化观察器
     const mutationObserver = new MutationObserver(function (mutations) {
         const piecesToTranslate = []
 
@@ -357,25 +398,61 @@ Promise.all([twpConfig.onReady(), getTabUrl()])
         mutationObserver.takeRecords()
     }
 
-    let pageIsVisible = document.visibilityState == "visible"
-    // isto faz com que partes do youtube não sejam traduzidas
-    // new IntersectionObserver(entries => {
-    //         if (entries[0].isIntersecting && document.visibilityState == "visible") {
-    //             pageIsVisible = true
-    //         } else {
-    //             pageIsVisible = false
-    //         }
+    // 6. 消息处理和事件监听
+    // 6.1 监听来自后台的消息
+    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+        // 处理各种类型的消息请求
+        if (request.action === "translatePage") {
+            // 翻译页面请求
+            if (request.targetLanguage === "original") {
+                // 如果目标语言是"original"，则恢复页面
+                pageTranslator.restorePage()
+            } else {
+                // 否则翻译页面为目标语言
+                pageTranslator.translatePage(request.targetLanguage)
+            }
+        } else if (request.action === "restorePage") {
+            // 恢复页面请求
+            pageTranslator.restorePage()
+        } else if (request.action === "getOriginalTabLanguage") {
+            // 获取原始标签语言请求
+            pageTranslator.onGetOriginalTabLanguage(function () {
+                sendResponse(originalTabLanguage)
+            })
+            return true
+        } else if (request.action === "getCurrentPageLanguage") {
+            // 获取当前页面语言请求
+            sendResponse(currentPageLanguage)
+        } else if (request.action === "getCurrentPageLanguageState") {
+            // 获取当前页面语言状态请求
+            sendResponse(pageLanguageState)
+        } else if (request.action === "getCurrentPageTranslatorService") {
+            // 获取当前使用的翻译服务提供商请求
+            sendResponse(currentPageTranslatorService)
+        } else if (request.action === "swapTranslationService") {
+            // 切换翻译服务提供商请求
+            pageTranslator.swapTranslationService()
+        } else if (request.action === "toggle-translation") {
+            // 切换翻译状态请求
+            if (pageLanguageState === "translated") {
+                pageTranslator.restorePage()
+            } else {
+                pageTranslator.translatePage()
+            }
+        } else if (request.action === "autoTranslateBecauseClickedALink") {
+            // 因点击链接自动翻译请求
+            if (twpConfig.get("autoTranslateWhenClickingALink") === "yes") {
+                pageTranslator.onGetOriginalTabLanguage(function () {
+                    // 如果页面是原始状态，原始语言不是目标语言，且原始语言不在不翻译语言列表中，则翻译页面
+                    if (pageLanguageState === "original" && originalTabLanguage !== currentTargetLanguage && twpConfig.get("neverTranslateLangs").indexOf(originalTabLanguage) === -1) {
+                        pageTranslator.translatePage()
+                    }
+                })
+            }
+        }
+    })
 
-    //         if (pageIsVisible && pageLanguageState === "translated") {
-    //             enableMutatinObserver()
-    //         } else {
-    //             disableMutatinObserver()
-    //         }
-    //     }, {
-    //         root: null
-    //     })
-    //     .observe(document.body)
-
+    // 6.2 页面可见性变化处理
     const handleVisibilityChange = function () {
         if (document.visibilityState == "visible") {
             pageIsVisible = true
@@ -619,12 +696,12 @@ Promise.all([twpConfig.onReady(), getTabUrl()])
     function encapsulateTextNode(node,ctx) {
         const pageSpecialConfig = getPageSpecialConfig(ctx);
         const isShowDualLanguage = twpConfig.get("isShowDualLanguage")==='no'?false:true;
-        
-        
+
+
         const fontNode = document.createElement("font")
         let style = 'vertical-align: inherit;'
         if (isShowDualLanguage && (!pageSpecialConfig || pageSpecialConfig.style!=="none")) {
-          let customDualStyle = twpConfig.get("customDualStyle");
+          const customDualStyle = twpConfig.get("customDualStyle");
           let dualStyle = customDualStyle || twpConfig.get("dualStyle") || 'underline';
           if(pageSpecialConfig && pageSpecialConfig.style){
             dualStyle = pageSpecialConfig.style;
@@ -647,7 +724,7 @@ Promise.all([twpConfig.onReady(), getTabUrl()])
         }
         fontNode.setAttribute("style", style)
         // fontNode.setAttribute("_mstmutation", "1")
-        // add class name 
+        // add class name
         fontNode.textContent = node.textContent
 
         node.replaceWith(fontNode)
@@ -671,7 +748,6 @@ Promise.all([twpConfig.onReady(), getTabUrl()])
 
                         nodes[j] = encapsulateTextNode(nodes[j],ctx)
 
-                        showOriginal.add(nodes[j])
                         nodesToRestore.push({
                             node: nodes[j],
                             original: nodes[j].textContent
@@ -691,7 +767,6 @@ Promise.all([twpConfig.onReady(), getTabUrl()])
 
                         nodes[j] = encapsulateTextNode(nodes[j],ctx)
 
-                        showOriginal.add(nodes[j])
                         nodesToRestore.push({
                             node: nodes[j],
                             original: nodes[j].textContent
@@ -699,7 +774,7 @@ Promise.all([twpConfig.onReady(), getTabUrl()])
 
                       const result =  await handleCustomWords(translated, nodes[j].textContent, currentPageTranslatorService, currentTargetLanguage);
                       nodes[j].textContent = result
-                        
+
                     }
                 }
             }
@@ -757,7 +832,7 @@ Promise.all([twpConfig.onReady(), getTabUrl()])
                     const piecesToTranslateNow = []
                     piecesToTranslate.forEach(ptt => {
                         if (!ptt.isTranslated) {
-                            
+
                             if (bottomIsInScreen(ptt.topElement) || topIsInScreen(ptt.bottomElement)) {
                                 ptt.isTranslated = true
                                 piecesToTranslateNow.push(ptt)
@@ -784,12 +859,6 @@ Promise.all([twpConfig.onReady(), getTabUrl()])
                             )
                             if (pageLanguageState === "translated" && currentFooCount === fooCount) {
                                  await translateResults(piecesToTranslateNow, results,ctx)
-                                 // changed here
-                                 const isShowDualLanguage = twpConfig.get("isShowDualLanguage")==='no'?false:true;
-
-                                 if(isShowDualLanguage){
-                                    showCopyiedNodes()
-                                 }
                             }
                     }
 
@@ -815,102 +884,88 @@ Promise.all([twpConfig.onReady(), getTabUrl()])
 
     translateDynamically()
 
-    function translatePageTitle() {
-        const title = document.querySelector("title");
-        if (title && (
-                title.classList.contains("notranslate") ||
-                title.getAttribute("translate") === "no"
-            )) {
-            return;
-        }
-        if (document.title.trim().length < 1) return;
-        originalPageTitle = document.title
 
-        backgroundTranslateSingleText(currentPageTranslatorService, currentTargetLanguage, originalPageTitle)
-            .then(result => {
-                if (result) {
-                    document.title = result
-                }
-            })
-    }
-
-    const pageLanguageStateObservers = []
-
-    pageTranslator.onPageLanguageStateChange = function (callback) {
-        pageLanguageStateObservers.push(callback)
-    }
-
+    // 翻译页面的主函数
     pageTranslator.translatePage = async function (targetLanguage) {
+        // 增加计数器，用于追踪翻译状态的变化
         fooCount++
+        // 首先恢复页面到原始状态
         pageTranslator.restorePage()
-        showOriginal.enable()
 
+        // 获取是否要排序翻译结果的配置
         dontSortResults = twpConfig.get("dontSortResults") == "yes" ? true : false
 
+        // 如果指定了目标语言，则更新当前目标语言
         if (targetLanguage) {
             currentTargetLanguage = targetLanguage
         }
 
-        // piecesToTranslate = getPiecesToTranslate()
-       try{
+        try {
+            // 获取需要翻译的节点，并从中提取需要翻译的文本片段
+            piecesToTranslate = (await getNodesThatNeedToTranslate(document.body, ctx)).reduce((acc, node) => {
+                return acc.concat(getPiecesToTranslate(node))
+            }, [])
+        } catch(e) {
+            console.error('获取需要翻译的片段失败', e)
+            throw e;
+        }
 
-        piecesToTranslate = (await getNodesThatNeedToTranslate(document.body,ctx)).reduce((acc, node) => {
-          return acc.concat(getPiecesToTranslate(node))
-        }, [])
-       }catch(e){
-         console.error('get pieces failed',e)
-         throw e;
-       }
+        // 获取需要翻译的属性（如placeholder, alt, title等）
         attributesToTranslate = getAttributesToTranslate()
-        // TODO
-        // attributesToTranslate = [];
 
+        // 更新页面语言状态为"已翻译"
         pageLanguageState = "translated"
+        // 通知后台页面语言状态已更改
         chrome.runtime.sendMessage({
             action: "setPageLanguageState",
             pageLanguageState
         })
-        pageLanguageStateObservers.forEach(callback => callback(pageLanguageState))
+        // 更新当前页面语言为目标语言
         currentPageLanguage = currentTargetLanguage
-        const isTranslateTitle = twpConfig.get("isTranslateTitle") == "yes" ? true : false
-        if (isTranslateTitle) {
-          translatePageTitle()
-        }
 
+        // 启用DOM变化监视器，用于检测动态添加的内容
         enableMutatinObserver()
 
+        // 开始动态翻译页面
         translateDynamically()
     }
 
+    // 恢复页面到原始状态的函数
     pageTranslator.restorePage = function () {
+        // 增加计数器，用于追踪翻译状态的变化
         fooCount++
+        // 清空需要翻译的文本片段
         piecesToTranslate = []
 
-        showOriginal.disable()
+        // 禁用DOM变化监视器
         disableMutatinObserver()
 
+        // 更新页面语言状态为"原始"
         pageLanguageState = "original"
+        // 通知后台页面语言状态已更改
         chrome.runtime.sendMessage({
             action: "setPageLanguageState",
             pageLanguageState
         })
-        pageLanguageStateObservers.forEach(callback => callback(pageLanguageState))
+        // 恢复当前页面语言为原始标签语言
         currentPageLanguage = originalTabLanguage
 
+        // 恢复原始页面标题
         if (originalPageTitle) {
             document.title = originalPageTitle
         }
         originalPageTitle = null
-        // remove copyied nodes
+
+        // 移除复制的节点（用于双语显示）
         removeCopyiedNodes();
 
-
+        // 恢复所有被翻译过的节点
         for (const ntr of nodesToRestore) {
             ntr.node.replaceWith(ntr.original)
         }
         nodesToRestore = []
 
-        //TODO não restaurar atributos que foram modificados
+        // 恢复所有被翻译过的属性
         for (const ati of attributesToTranslate) {
             if (ati.isTranslated) {
                 ati.node.setAttribute(ati.attrName, ati.original)
@@ -919,116 +974,96 @@ Promise.all([twpConfig.onReady(), getTabUrl()])
         attributesToTranslate = []
     }
 
+    // 切换翻译服务提供商
     pageTranslator.swapTranslationService = function () {
+        // 在Google和Yandex之间切换
         if (currentPageTranslatorService === "google") {
             currentPageTranslatorService = "yandex"
         } else {
             currentPageTranslatorService = "google"
         }
+        // 如果页面当前已翻译，则使用新的翻译服务重新翻译
         if (pageLanguageState === "translated") {
             pageTranslator.translatePage()
         }
     }
 
+    // 记录是否已获取原始标签语言
     let alreadyGotTheLanguage = false
+    // 存储获取原始标签语言的观察者
     const observers = []
 
+    // 注册获取原始标签语言的回调函数
     pageTranslator.onGetOriginalTabLanguage = function (callback) {
         if (alreadyGotTheLanguage) {
+            // 如果已经获取到语言，直接调用回调
             callback(originalTabLanguage)
         } else {
+            // 否则将回调添加到观察者列表
             observers.push(callback)
         }
     }
 
-    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-        if (request.action === "translatePage") {
-            if (request.targetLanguage === "original") {
-                pageTranslator.restorePage()
-            } else {
-                pageTranslator.translatePage(request.targetLanguage)
-            }
-        } else if (request.action === "restorePage") {
-            pageTranslator.restorePage()
-        } else if (request.action === "getOriginalTabLanguage") {
-            pageTranslator.onGetOriginalTabLanguage(function () {
-                sendResponse(originalTabLanguage)
-            })
-            return true
-        } else if (request.action === "getCurrentPageLanguage") {
-            sendResponse(currentPageLanguage)
-        } else if (request.action === "getCurrentPageLanguageState") {
-            sendResponse(pageLanguageState)
-        } else if (request.action === "getCurrentPageTranslatorService") {
-            sendResponse(currentPageTranslatorService)
-        } else if (request.action === "swapTranslationService") {
-            pageTranslator.swapTranslationService()
-        } else if (request.action === "toggle-translation") {
-
-            if (pageLanguageState === "translated") {
-                pageTranslator.restorePage()
-            } else {
-                pageTranslator.translatePage()
-            }
-        } else if (request.action === "autoTranslateBecauseClickedALink") {
-            if (twpConfig.get("autoTranslateWhenClickingALink") === "yes") {
-                pageTranslator.onGetOriginalTabLanguage(function () {
-                    if (pageLanguageState === "original" && originalTabLanguage !== currentTargetLanguage && twpConfig.get("neverTranslateLangs").indexOf(originalTabLanguage) === -1) {
-                        pageTranslator.translatePage()
-                    }
-                })
-            }
-        }
-    })
-
-    // Requests the detection of the tab language in the background
-    if (window.self === window.top) { // is main frame
+    // 7. 初始化流程
+    // 7.1 主框架初始化
+    if (window.self === window.top) {
         const onTabVisible = function () {
             chrome.runtime.sendMessage({
                 action: "detectTabLanguage"
-            },async  result => {
-                // if und, manual check
-                
-                if(result === 'und' || !result){
+            }, async result => {
+                // 如果语言未检测到或为"und"，则手动检测
+                if (result === 'und' || !result) {
                     result = await detectPageLanguage()
-                }              
+                }
                 result = result || "und"
 
-
+                // 如果结果仍为"und"
                 if (result === "und") {
                     originalTabLanguage = result
                 }
 
+                // 如果当前网站在"总是翻译的网站"列表中，则翻译页面
                 if (twpConfig.get("alwaysTranslateSites").indexOf(tabHostName) !== -1) {
                     pageTranslator.translatePage()
-                }else if(result!=='und'){
+                } else if (result !== 'und') {
+                    // 修正语言代码
                     const langCode = twpLang.fixTLanguageCode(result)
                     if (langCode) {
                         originalTabLanguage = langCode
                     }
+
+                    // 特定情况下的自动翻译逻辑
                     if (location.hostname === "translatewebpages.org" && location.href.indexOf("?autotranslate") !== -1 && twpConfig.get("neverTranslateSites").indexOf(tabHostName) === -1) {
                         pageTranslator.translatePage()
                     } else {
+                        // 避免在翻译网站上进行翻译
                         if (location.hostname !== "translate.googleusercontent.com" && location.hostname !== "translate.google.com" && location.hostname !== "translate.yandex.com") {
+                            // 如果页面是原始状态且不在隐私浏览模式下
                             if (pageLanguageState === "original" && !chrome.extension.inIncognitoContext) {
+                                // 如果当前网站不在"永不翻译的网站"列表中
                                 if (twpConfig.get("neverTranslateSites").indexOf(tabHostName) === -1) {
+                                    // 如果语言代码有效，且不是目标语言，且在"总是翻译的语言"列表中，则翻译页面
                                     if (langCode && langCode !== currentTargetLanguage && twpConfig.get("alwaysTranslateLangs").indexOf(langCode) !== -1) {
                                         pageTranslator.translatePage()
-                                    } 
+                                    }
                                 }
                             }
                         }
                     }
                 }
 
+                // 通知所有观察者原始标签语言
                 observers.forEach(callback => callback(originalTabLanguage))
                 alreadyGotTheLanguage = true
             })
         }
+
+        // 延迟120ms执行初始化
         setTimeout(function () {
             if (document.visibilityState == "visible") {
                 onTabVisible()
             } else {
+                // 如果页面不可见，则添加可见性变化监听器
                 const handleVisibilityChange = function () {
                     if (document.visibilityState == "visible") {
                         document.removeEventListener("visibilitychange", handleVisibilityChange)
@@ -1038,7 +1073,9 @@ Promise.all([twpConfig.onReady(), getTabUrl()])
                 document.addEventListener("visibilitychange", handleVisibilityChange, false)
             }
         }, 120)
-    } else { // is subframe (iframe)
+    } else {
+        // 7.2 iframe框架初始化
+        // 获取主框架的标签语言
         chrome.runtime.sendMessage({
             action: "getMainFrameTabLanguage"
         }, result => {
@@ -1047,9 +1084,11 @@ Promise.all([twpConfig.onReady(), getTabUrl()])
             alreadyGotTheLanguage = true
         })
 
+        // 获取主框架的页面语言状态
         chrome.runtime.sendMessage({
             action: "getMainFramePageLanguageState"
         }, result => {
+            // 如果主框架已翻译但当前框架未翻译，则翻译当前框架
             if (result === "translated" && pageLanguageState === "original") {
                 pageTranslator.translatePage()
             }
@@ -1057,24 +1096,25 @@ Promise.all([twpConfig.onReady(), getTabUrl()])
     }
 })
 
+// 检测页面语言的辅助函数
 function detectPageLanguage() {
   return new Promise((resolve, reject) => {
-    if(document.documentElement && document.documentElement.lang){
+    // 首先尝试从HTML元素的lang属性获取
+    if (document.documentElement && document.documentElement.lang) {
       resolve(document.documentElement.lang)
-    }else{
-      // use detect language api
-      if(document.body && document.body.innerText){
+    } else {
+      // 如果无法从HTML元素获取，则使用语言检测API
+      if (document.body && document.body.innerText) {
         chrome.runtime.sendMessage({
             action: "detectLanguage",
-             text: document.body.innerText
+            text: document.body.innerText
         }, response => {
             resolve(response)
         })
-      }else{
+      } else {
+        // 如果没有文本内容，则无法检测
         resolve(undefined)
       }
     }
   })
-
 }
-

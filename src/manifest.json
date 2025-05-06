@@ -89,13 +89,13 @@
             "match_about_blank": true,
             "js": ["/lib/languages.js", "/lib/config.js", "/lib/platformInfo.js"]
         },
-        
+
         {
             "matches": ["<all_urls>"],
             "run_at": "document_end",
             "all_frames": true,
             "match_about_blank": true,
-            "js": ["/lib/i18n.js", "/contentScript/showOriginal.js","/lib/specialRules.js", "/contentScript/enhance.js", "/contentScript/pageTranslator.js"]
+            "js": ["/lib/i18n.js", "/lib/specialRules.js", "/contentScript/enhance.js", "/contentScript/pageTranslator.js"]
         },
         {
             "matches": ["<all_urls>"],
